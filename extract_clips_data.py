@@ -157,20 +157,20 @@ if __name__ == '__main__':
     home_BBs_ro = """select home_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY home_id, game_date) as rn 
                     from lac_fullstack_dev.dbo.game_schedule """
     home_BBs_ro = connection.execute_query_return_df(home_BBs_ro, 'lac_fullstack_dev')
-    connection.sql_query_bt(home_BBs_ro,'q3_a_home_BBs_ro', ['team_id'], 0)    
+    connection.sql_query_bt(home_BBs_ro,'q3_a_home_BBs_ro', ['team_id', 'game_date'], 0)    
 
 
     away_BBs_ro = """select away_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY away_id, game_date) as rn 
                     from lac_fullstack_dev.dbo.game_schedule """
     away_BBs_ro = connection.execute_query_return_df(away_BBs_ro, 'lac_fullstack_dev')
-    connection.sql_query_bt(away_BBs_ro,'q3_a_away_BBs_ro', ['team_id'], 0) 
+    connection.sql_query_bt(away_BBs_ro,'q3_a_away_BBs_ro', ['team_id', 'game_date'], 0) 
 
     home_BBs = """select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from q3_a_home_BBs_ro a
                 left join q3_a_home_BBs_ro b
                 on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
                 where b.team_id is not null"""
     home_BBs = connection.execute_query_return_df(home_BBs, 'lac_fullstack_dev')
-    connection.sql_query_bt(home_BBs,'q3_a_home_BBs', ['team_id'], 0) 
+    connection.sql_query_bt(home_BBs,'q3_a_home_BBs', ['team_id','game_date_g1_bb'], 0) 
 
 
     away_BBs = """select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from q3_a_away_BBs_ro a
@@ -178,7 +178,7 @@ if __name__ == '__main__':
                 on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
                 where b.team_id is not null"""
     away_BBs = connection.execute_query_return_df(away_BBs, 'lac_fullstack_dev')
-    connection.sql_query_bt(away_BBs,'q3_a_away_BBs', ['team_id'], 0) 
+    connection.sql_query_bt(away_BBs,'q3_a_away_BBs', ['team_id', 'game_date_g1_bb'], 0) 
 
 
     # all_BBs = """select * 
@@ -219,7 +219,7 @@ if __name__ == '__main__':
                                     group by teamName) a)
                 """
     question_03_a = connection.execute_query_return_df(question_03_a, 'lac_fullstack_dev')
-    connection.sql_query_bt(question_03_a,'q3_a_final', ['teamName'], 0) 
+    connection.sql_query_bt(question_03_a,'q3_a_final', ['teamName', 'bb_type'], 0) 
 
     #Question #3B
 
@@ -227,13 +227,13 @@ if __name__ == '__main__':
                 UNION
                 select away_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule ) a"""
     games_ro = connection.execute_query_return_df(games_ro, 'lac_fullstack_dev')
-    connection.sql_query_bt(games_ro,'q3_b_games_ro', ['team_id'], 0) 
+    connection.sql_query_bt(games_ro,'q3_b_games_ro', ['team_id', 'game_date'], 0) 
 
     games = """select a.team_id, b.game_date as game_date_g1, a.game_date as game_date_g2, datediff(day, cast(b.game_date as datetime), cast(a.game_date as datetime)) as rest_days from q3_b_games_ro a
                 left join q3_b_games_ro b
                 on a.rn = b.rn + 1 and a.team_id = b.team_id """
     games = connection.execute_query_return_df(games, 'lac_fullstack_dev')
-    connection.sql_query_bt(games,'q3_b_games', ['team_id'], 0)  
+    connection.sql_query_bt(games,'q3_b_games', ['team_id', 'game_date_g1'], 0)  
 
     question_03_b = """select b.teamName, a.* from q3_b_games a
                 left join lac_fullstack_dev.dbo.team b
@@ -380,17 +380,17 @@ if __name__ == '__main__':
                         -- d.*  
                         from (select avg(total_game_stints) as avg_stints_per_game, player_name 
                             from (select count(*) as total_game_stints , game_id, team, player_name  
-                                from player_stints
+                                from q4_b_player_stints
                                 group by game_id, team, player_name) a
                             group by player_name) a
-                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
-                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
 
                         group by game_id, team, player_name) b
                         on a.player_name = b.player_name
                         left join lac_fullstack_dev.dbo.team c
                         on b.team = c.teamName
-                        left join (select * from game_stats) d
+                        left join (select * from q4_d_game_stats) d
                         on b.game_id = d.game_id) a
                         -- where win = 1
                         group by player_name, team
@@ -417,17 +417,17 @@ if __name__ == '__main__':
                         -- d.*  
                         from (select avg(total_game_stints) as avg_stints_per_game, player_name 
                             from (select count(*) as total_game_stints , game_id, team, player_name  
-                                from player_stints
+                                from q4_b_player_stints
                                 group by game_id, team, player_name) a
                             group by player_name) a
-                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
-                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
 
                         group by game_id, team, player_name) b
                         on a.player_name = b.player_name
                         left join lac_fullstack_dev.dbo.team c
                         on b.team = c.teamName
-                        left join (select * from game_stats) d
+                        left join (select * from q4_d_game_stats) d
                         on b.game_id = d.game_id) a
                         where win = 1
                         group by player_name, team
@@ -454,17 +454,17 @@ if __name__ == '__main__':
                         -- d.*  
                         from (select avg(total_game_stints) as avg_stints_per_game, player_name 
                             from (select count(*) as total_game_stints , game_id, team, player_name  
-                                from player_stints
+                                from q4_b_player_stints
                                 group by game_id, team, player_name) a
                             group by player_name) a
-                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
-                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
 
                         group by game_id, team, player_name) b
                         on a.player_name = b.player_name
                         left join lac_fullstack_dev.dbo.team c
                         on b.team = c.teamName
-                        left join (select * from game_stats) d
+                        left join (select * from q4_d_game_stats) d
                         on b.game_id = d.game_id) a
                         where win = 0
                         group by player_name, team

@@ -31,24 +31,15 @@ from utilities.utils import sql_server
 connection = sql_server(server = 'sql_server' , username = 'sa', port = 1443, password = 'tEST1234')
 # print(connection.connection)
 
-league_stats_df = connection.execute_query_return_df("""SELECT TOP (1000) [game_id]
-      ,[home_id]
-      ,[home_score]
-      ,[away_id]
-      ,[away_score]
-      ,[game_date]
+league_stats_df = connection.execute_query_return_df("""SELECT *
 
-  FROM [lac_fullstack_dev].[dbo].[game_schedule]""", database_name='lac_fullstack_dev')
+  FROM [lac_fullstack_dev].[dbo].[q2_final]
+                                                     where teamName = 'LA Clippers'""", database_name='lac_fullstack_dev')
 
 # print(test)
-team_stats_df = connection.execute_query_return_df("""SELECT TOP (1000) [team_id]
-      ,[player_id]
-      ,[first_name]
-      ,[last_name]
-      ,[position]
-      ,[contract_type]
-      ,[LOAD_DATETIME]
-  FROM [lac_fullstack_dev].[dbo].[roster]""", database_name='lac_fullstack_dev')
+team_stats_df = connection.execute_query_return_df("""SELECT *
+  FROM [lac_fullstack_dev].[dbo].[q4_d_final_all]
+                                                   where team = 'LA Clippers'""", database_name='lac_fullstack_dev')
 
 
 

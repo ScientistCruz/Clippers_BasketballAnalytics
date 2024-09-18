@@ -121,6 +121,7 @@ class sql_server:
     #     return 
 
     def sql_query_bt(self, df,db_table_name, merge_column, upload):
+        print('-' * 20)
     # Added logic for bigger tables.
 
         df['LOAD_DATETIME'] = dt.datetime.now()
@@ -251,7 +252,7 @@ class sql_server:
         print("Staging Table updated.")
 
         self.exceute_query(merge_tables_query)
-        print("Production Table Table updated.")
+        print("Production Table updated.")
 
         return database_name, stg_database_name
 
