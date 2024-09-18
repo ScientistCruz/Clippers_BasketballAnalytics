@@ -1,0 +1,9 @@
+pyodbc
+sqlalchemy
+pandas
+pathlib
+Django
+psycopg2>=2.8
+mssql-django
+django-tables2
+django-pandas

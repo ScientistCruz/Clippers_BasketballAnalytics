@@ -1,0 +1,39 @@
+version: "3.8"
+services:
+
+  sql_server:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=tEST1234
+      - MSSQL_PID=Developer
+    platform: linux/amd64
+    
+    ports: 
+      - 1433:1433
+
+  clips_file:
+    build: 
+      context: .
+      dockerfile: dockerfile
+    command: sh -c "sleep 10s ; python ./extract_clips_data.py"
+    depends_on:
+      - sql_server
+    volumes:
+      - ./utilities:/hello_world_api/utilities
+      - ./dev_test_data:/hello_world_api/dev_test_data
+
+
+  django_app:
+    build:
+      context: .
+      dockerfile: ./django_app/dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/django_app
+    ports:
+      - "8000:8000"
+    user: root
+    depends_on:
+      clips_file: 
+        condition: service_completed_successfully

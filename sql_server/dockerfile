@@ -1,0 +1,26 @@
+# Dockerfile, Image, Container
+
+FROM python:3.12
+
+WORKDIR /hello_world_api
+
+RUN apk update
+RUN apk add gcc libc-dev g++ libffi-dev libxml2 unixodbc-dev mariadb-dev postgresql-dev
+
+COPY requirements.txt .
+COPY . .
+RUN pip install -r requirements.txt
+# ADD clip_V1.ipynb .
+
+# RUN pip install requests beautifulsoup4
+# RUN pip install jupyter
+
+
+# CMD ["python", "./clip_V1.ipynb"]
+# CMD ["jupyter", "./clip_V1.ipynb"]
+CMD ["python", "./hello_world_V2.py"]
+# , "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+
+
+# username = sa
+# docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=tEST1234" --platform linux/amd64 -p 1433:1433 -d --name sqlserver mcr.microsoft.com/mssql/server:2019-latest
