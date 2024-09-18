@@ -15,6 +15,7 @@ sys.path.insert(0, utils)
 import utilities
 from utilities.utils import sql_server
 
+# Question #1: Database creation (Python, SQL, other scripting languages)
 
 if __name__ == '__main__':
     connection = sql_server(server = 'sql_server' , username = 'sa', port = 1443, password = 'tEST1234')
@@ -31,19 +32,19 @@ if __name__ == '__main__':
 
         if '.json' in file:
             file_df = pd.read_json(os.path.join(dev_test_data, file))
-            db_name = file.replace('.json', '')
+            table_name = file.replace('.json', '')
         else:
             pass
 
-        if db_name == 'player':
+        if table_name == 'player':
             merge_column = ['player_id']
             file_df[merge_column[0]] = file_df[[merge_column[0]]].astype('int64')
-        elif db_name == 'roster':
+        elif table_name == 'roster':
             merge_column = ['team_id', 'player_id']
             file_df[merge_column[0]] = file_df[[merge_column[0]]].astype('int64')
             file_df[merge_column[1]] = file_df[[merge_column[1]]].astype('int64')
 
-        elif db_name == 'game_schedule':
+        elif table_name == 'game_schedule':
             merge_column = ['game_id']
             file_df[merge_column[0]] = file_df[[merge_column[0]]].astype('int64')
             file_df['home_score'] = file_df['home_score'].astype('int64')
@@ -51,7 +52,7 @@ if __name__ == '__main__':
             file_df['away_score'] = file_df['away_score'].astype('int64')
             file_df['away_id'] = file_df['away_id'].astype('int64')            
 
-        elif db_name == 'team_affiliate':
+        elif table_name == 'team_affiliate':
             merge_column = ['nba_teamId']
             file_df[merge_column[0]] = file_df[[merge_column[0]]].astype('int64')
 
@@ -62,11 +63,11 @@ if __name__ == '__main__':
 
             file_df['glg_teamId'] = file_df['glg_teamId'].astype('int64')
 
-        elif db_name == 'lineup':
+        elif table_name == 'lineup':
             # merge_column = ['team_id', 'player_id', 'lineup_num']
             merge_column = ['team_id', 'lineup_num', 'game_id', 'player_id']
             file_df = file_df.astype('int64')
-        elif db_name == 'team':
+        elif table_name == 'team':
             merge_column = ['teamId']
             file_df[merge_column[0]] = file_df[[merge_column[0]]].astype('int64')
 
@@ -74,19 +75,15 @@ if __name__ == '__main__':
             print('Table [merge column] needs to mapped.')
 
 
-        connection.sql_query_bt(file_df,db_name, merge_column, 0)        
+        connection.sql_query_bt(file_df,table_name, merge_column, 0)        
 
+
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------
     # Question #2
-    query_string_q2 = """Use lac_fullstack_dev
-Go
 
-CREATE VIEW question_02 AS
-
--- 2. Basic Queries (SQL)
--- a. Write a SQL query that can calculate team win-loss records, sorted by win percentage (defined as wins divided by games played)
-
-
-WITH home_stats as (select a.*, b.teamName 
+    home_stats_df = """select a.*, b.teamName, ROW_NUMBER() OVER (ORDER BY W + L DESC)  AS home_games_rank 
                     from (select sum(HOME_WIN) as W, sum(HOME_LOSE) as L,  home_id as team_id
                         from (select game_id, home_id, home_score, away_id, away_score,
                                 case when home_score > away_score then 1
@@ -105,8 +102,12 @@ WITH home_stats as (select a.*, b.teamName
                         group by home_id) a
 
                         left join lac_fullstack_dev.dbo.team b
-                        on a.team_id = b.teamId),
-        away_stats as (select a.*, b.teamName 
+                        on a.team_id = b.teamId"""
+    home_stats_df = connection.execute_query_return_df(home_stats_df, 'lac_fullstack_dev')
+    connection.sql_query_bt(home_stats_df,'q2_home_stats', ['team_id'], 0)    
+
+
+    away_stats_df = """select a.*, b.teamName ,ROW_NUMBER() OVER (ORDER BY W + L DESC)  AS away_games_rank 
                         from (select sum(away_WIN) as W, sum(away_LOSE) as L,  away_id as team_id
                             from (select game_id, home_id, home_score, away_id, away_score,
                                     case when home_score < away_score then 1
@@ -125,206 +126,165 @@ WITH home_stats as (select a.*, b.teamName
                             group by away_id) a
 
                         left join lac_fullstack_dev.dbo.team b
-                        on a.team_id = b.teamId)
+                        on a.team_id = b.teamId"""
 
-select * 
-from (select sum(W) as wins, sum(L) as loses, cast(round(cast(sum(W) as decimal(16,2))/(sum(L) + sum(W)), 2) as decimal (16,2)) as win_percent, team_id, teamName 
-    from (select * from home_stats
-        union all
-        select * from away_stats) a
-    group by team_id, teamName) a
--- order by win_percent desc
+    away_stats_df = connection.execute_query_return_df(away_stats_df, 'lac_fullstack_dev')
+    connection.sql_query_bt(away_stats_df,'q2_away_stats', ['team_id'], 0)    
 
+    question_02 = """select a.teamName, wins + losses as games_played, wins, losses, win_percent as win_percentage ,
+            b.home_games_rank, c.away_games_rank, ROW_NUMBER() OVER (ORDER BY wins + losses DESC) as total_games_rank
+            from (select sum(W) as wins, sum(L) as losses, cast(round(cast(sum(W) as decimal(16,2))/(sum(L) + sum(W)), 2) as decimal (16,2)) as win_percent, team_id, teamName 
+                from (select * from q2_home_stats
+                    union all
+                    select * from q2_away_stats) a
+                group by team_id, teamName) a
+            left join (select teamName, home_games_rank from q2_home_stats) b
+            on a.teamName = b.teamName
+            left join (select teamName, away_games_rank from q2_away_stats) c
+            on a.teamName = c.teamName
 
--- i. Final table should include team name, games played, wins, losses, win percentage
--- b. In the same table, show how the team ranks (highest to lowest) in terms of games played, home games, and away games during this month of the season? Make sure your code can extend to additional months as data is added to the data set. For each, show both the number of games and the rank
-"""
-    try:
-        connection.exceute_query(query_string_q2)
-    except:
-        error_value = str(sys.exc_info()[1])
-        print(error_value)
+            order by win_percent desc"""
 
-    # Question #3
-
-    query_string_q3 = """Use lac_fullstack_dev
-Go
-
-CREATE VIEW question_03 AS
-
--- WITH home_BBs_ro as (select home_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY home_id, game_date) as rn 
---                     from lac_fullstack_dev.dbo.game_schedule 
---                     -- where home_id = '1610612746'
---                     ),
---     away_BBs_ro as (select away_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY away_id, game_date) as rn 
---                     from lac_fullstack_dev.dbo.game_schedule 
---                     -- where away_id = '1610612746'
---                     ),
---     away_BBs as (select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from away_BBs_ro a
---                 left join away_BBs_ro b
---                 on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
---                 where b.team_id is not null
---                 ),
---     home_BBs as (select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from home_BBs_ro a
---                 left join home_BBs_ro b
---                 on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
---                 where b.team_id is not null
---                 )
+    question_02 = connection.execute_query_return_df(question_02, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_02,'q2_final', ['teamName'], 0) 
 
 
--- -- select * 
--- -- from(select b.teamName, a.* , 'home' as bb_type from home_BBs a
--- --     left join lac_fullstack_dev.dbo.team b
--- --     on a.team_id = b.teamId
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+    # Question #3A
 
 
--- --     union all
-
--- --     select b.teamName, a.*, 'away' as bb_type from away_BBs a
--- --     left join lac_fullstack_dev.dbo.team b
--- --     on a.team_id = b.teamId) a
--- -- order by game_date_g1_bb asc
+    home_BBs_ro = """select home_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY home_id, game_date) as rn 
+                    from lac_fullstack_dev.dbo.game_schedule """
+    home_BBs_ro = connection.execute_query_return_df(home_BBs_ro, 'lac_fullstack_dev')
+    connection.sql_query_bt(home_BBs_ro,'q3_a_home_BBs_ro', ['team_id'], 0)    
 
 
+    away_BBs_ro = """select away_id as team_id, game_date, ROW_NUMBER() OVER(ORDER BY away_id, game_date) as rn 
+                    from lac_fullstack_dev.dbo.game_schedule """
+    away_BBs_ro = connection.execute_query_return_df(away_BBs_ro, 'lac_fullstack_dev')
+    connection.sql_query_bt(away_BBs_ro,'q3_a_away_BBs_ro', ['team_id'], 0) 
 
--- -- a. The NBA has a concept of a Back-to-Back (B2B) which is if a team played 2 days in a row (regardless of start time). 
--- -- For the data given which team had the most Home-Home B2Bs? 
--- select * , 'home' as bb_type from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'home' as bb_type from home_BBs a
---         left join lac_fullstack_dev.dbo.team b
---         on a.team_id = b.teamId) a
---         group by teamName) a
-
--- where total_home_BBs = (select max(total_home_BBs) from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'home' as bb_type from home_BBs a
---                         left join lac_fullstack_dev.dbo.team b
---                         on a.team_id = b.teamId) a
---                         group by teamName) a)
-
--- union all
--- -- Which had the most Away-Away B2Bs? 
--- select *, 'away' as bb_type from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'away' as bb_type from away_BBs a
---         left join lac_fullstack_dev.dbo.team b
---         on a.team_id = b.teamId) a
---         group by teamName) a
-
--- where total_home_BBs = (select max(total_home_BBs) from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'away' as bb_type from away_BBs a
---                         left join lac_fullstack_dev.dbo.team b
---                         on a.team_id = b.teamId) a
---                         group by teamName) a)
+    home_BBs = """select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from q3_a_home_BBs_ro a
+                left join q3_a_home_BBs_ro b
+                on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
+                where b.team_id is not null"""
+    home_BBs = connection.execute_query_return_df(home_BBs, 'lac_fullstack_dev')
+    connection.sql_query_bt(home_BBs,'q3_a_home_BBs', ['team_id'], 0) 
 
 
---------------------------------------
--- b. Which team(s) had the longest rest between 2 games and what were the days of the 2 games?
-
--- with games_ro as (select *, ROW_NUMBER() OVER(ORDER BY team_id, game_date) as rn from (select home_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule 
---                 UNION
---                 select away_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule ) a
---                 ),
---         games as (select a.team_id, b.game_date as game_date_g1, a.game_date as game_date_g2, datediff(day, cast(b.game_date as datetime), cast(a.game_date as datetime)) as rest_days from games_ro a
---                 left join games_ro b
---                 on a.rn = b.rn + 1 and a.team_id = b.team_id )
-
--- select b.teamName, a.* from games a
--- left join lac_fullstack_dev.dbo.team b
---         on a.team_id = b.teamId
--- where rest_days = (select max(rest_days) from games)
+    away_BBs = """select a.team_id, b.game_date as game_date_g1_bb, a.game_date as game_date_g2_bb from q3_a_away_BBs_ro a
+                left join q3_a_away_BBs_ro b
+                on a.rn = b.rn + 1 and a.team_id = b.team_id and DATEDIFF(day, b.game_date,a.game_date) = 1
+                where b.team_id is not null"""
+    away_BBs = connection.execute_query_return_df(away_BBs, 'lac_fullstack_dev')
+    connection.sql_query_bt(away_BBs,'q3_a_away_BBs', ['team_id'], 0) 
 
 
---------------------------------------
+    # all_BBs = """select * 
+    #             from(select b.teamName, a.* , 'home' as bb_type from q2_home_BBs a
+    #                 left join lac_fullstack_dev.dbo.team b
+    #                 on a.team_id = b.teamId
 
--- select * from lac_fullstack_dev.dbo.game_schedule 
+    #                 union all
 
-with games_ro as (select *, ROW_NUMBER() OVER(PARTITION by team_id ORDER BY team_id, game_date) as rn from (select home_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule 
+    #                 select b.teamName, a.*, 'away' as bb_type from q2_away_BBs a
+    #                 left join lac_fullstack_dev.dbo.team b
+    #                 on a.team_id = b.teamId) a
+    #             order by game_date_g1_bb asc
+    #             """
+    # all_BBs = connection.execute_query_return_df(all_BBs, 'lac_fullstack_dev')
+    # connection.sql_query_bt(all_BBs,'q2_all_BBs', ['team_id'], 0) 
+
+    question_03_a = """select * , 'home' as bb_type from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'home' as bb_type from q3_a_home_BBs a
+                    left join lac_fullstack_dev.dbo.team b
+                    on a.team_id = b.teamId) a
+                    group by teamName) a
+
+            where total_home_BBs = (select max(total_home_BBs) from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'home' as bb_type from q3_a_home_BBs a
+                                    left join lac_fullstack_dev.dbo.team b
+                                    on a.team_id = b.teamId) a
+                                    group by teamName) a)
+
+            union all
+            -- Which had the most Away-Away B2Bs? 
+            select *, 'away' as bb_type from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'away' as bb_type from q3_a_away_BBs a
+                    left join lac_fullstack_dev.dbo.team b
+                    on a.team_id = b.teamId) a
+                    group by teamName) a
+
+            where total_home_BBs = (select max(total_home_BBs) from (select count(*) as total_home_BBs, teamName from (select b.teamName, a.* , 'away' as bb_type from q3_a_away_BBs a
+                                    left join lac_fullstack_dev.dbo.team b
+                                    on a.team_id = b.teamId) a
+                                    group by teamName) a)
+                """
+    question_03_a = connection.execute_query_return_df(question_03_a, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_03_a,'q3_a_final', ['teamName'], 0) 
+
+    #Question #3B
+
+    games_ro = """select *, ROW_NUMBER() OVER(PARTITION by team_id ORDER BY team_id, game_date) as rn from (select home_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule 
                 UNION
-                select away_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule ) a
-                ), 
-        games_ro_V2 as (select *, count(*) OVER (PARTITION by team_id ORDER BY team_id, game_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) as rn from (select home_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule 
-                UNION
-                select away_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule ) a
-                )
---  select t.*,
---            datediff(day,
---                     lag(DATE) over (partition by NUMBER order by id),
---                     DATE) as diff 
+                select away_id as team_id, game_date from lac_fullstack_dev.dbo.game_schedule ) a"""
+    games_ro = connection.execute_query_return_df(games_ro, 'lac_fullstack_dev')
+    connection.sql_query_bt(games_ro,'q3_b_games_ro', ['team_id'], 0) 
+
+    games = """select a.team_id, b.game_date as game_date_g1, a.game_date as game_date_g2, datediff(day, cast(b.game_date as datetime), cast(a.game_date as datetime)) as rest_days from q3_b_games_ro a
+                left join q3_b_games_ro b
+                on a.rn = b.rn + 1 and a.team_id = b.team_id """
+    games = connection.execute_query_return_df(games, 'lac_fullstack_dev')
+    connection.sql_query_bt(games,'q3_b_games', ['team_id'], 0)  
+
+    question_03_b = """select b.teamName, a.* from q3_b_games a
+                left join lac_fullstack_dev.dbo.team b
+                        on a.team_id = b.teamId
+                where rest_days = (select max(rest_days) from q3_b_games)"""
+    question_03_b = connection.execute_query_return_df(question_03_b, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_03_b,'q3_b_final', ['team_id'], 0) 
+
+    question_03_c = """select count(*) as three_in_four, b.teamName 
+                    from (select count(*) as total_games, team_id, og_gd
+                            from (select a.team_id , a.game_date as og_gd, b.game_date from q3_b_games_ro a
+                            left join q3_b_games_ro b
+                            on a.team_id = b.team_id and abs(DATEDIFF(day,a.game_date,b.game_date)) <= 2) a
+                            -- where team_id = '1610612747'
+                            group by team_id, og_gd
+                            ) a
+                    left join lac_fullstack_dev.dbo.team b
+                    on a.team_id = b.teamId        
+                    group by b.teamName
+                    order by count(*) desc"""
+    question_03_c = connection.execute_query_return_df(question_03_c, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_03_c,'q3_c_final', ['teamName'], 0) 
 
 
--- -- select * from games_ro
--- select * from games_ro
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+    # Question #4a
 
 
--- select a.*,
---                    (case when lag(game_date) over (partition by team_id order by team_id, game_date) < dateadd(day, 1, game_date)
---                             then 1 else 0
---                     end) as grp_start
---                     from games_ro a
-
--- select a.team_id , a.game_date as og_gd, b.game_date from games_ro a
--- left join games_ro b
--- on a.team_id = b.team_id and abs(DATEDIFF(day,a.game_date,b.game_date)) <= 2
--- where a.team_id = '1610612747'
+    question_04_a = """select game_id, team_id, lineup_num,[1] as player_1, [2] as player_2, [3] as player_3, [4] as player_4, [5] as player_5 
+                    from (select team_id, game_id, player_id, lineup_num, ROW_NUMBER() OVER (PARTITION BY game_id, team_id, lineup_num ORDER BY player_id) AS rn from lac_fullstack_dev.dbo.lineup
+                    -- where team_id = '1610612747' and game_id = '66' and lineup_num = 5
+                    ) a
+                    PIVOT(max(player_id) 
+                    for rn in ([1], [2], [3], [4], [5])) as pt"""
+    question_04_a = connection.execute_query_return_df(question_04_a, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_a,'q4_a_final', ['game_id', 'team_id', 'lineup_num'], 0) 
 
 
+    # Question #4b
 
-
--- c. Additionally, write a query that ranks the teams based on the number of 3-in-4s (3 games over 4 days that is regardless of start time).
-select count(*) as three_in_four, b.teamName 
-from (select count(*) as total_games, team_id, og_gd
-        from (select a.team_id , a.game_date as og_gd, b.game_date from games_ro a
-        left join games_ro b
-        on a.team_id = b.team_id and abs(DATEDIFF(day,a.game_date,b.game_date)) <= 2) a
-        -- where team_id = '1610612747'
-        group by team_id, og_gd
-        ) a
-left join lac_fullstack_dev.dbo.team b
-on a.team_id = b.teamId        
-group by b.teamName
-order by count(*) desc"""
-    try:
-        connection.exceute_query(query_string_q3)
-    except:
-        error_value = str(sys.exc_info()[1])
-        print(error_value)
-    # Question #4
-
-    query_string_q4 = """Use lac_fullstack_dev
-Go
-
-CREATE VIEW question_04 AS
-
--- select * from lac_fullstack_dev.dbo.game_schedule
-
--- 4.Lineups Queries (SQL): In answering any of these items, feel free creating intermediate temp tables, inline tables, or CTEs as needed.
--- a. Notice that in the lineup data each row corresponds to a given player, game, lineup_num, period. 
--- Write a SQL query that creates a “wide” table for the team (so a given row is now game_id, team_id, lineup_num, period, time_in, time_out, and the 5 players on the court)
--- i. Notice that time_in and time_out are in seconds, starting at 12 minutes (720) and going down to 0 minutes
-
--- select game_id, team_id, lineup_num,[1] as player_1, [2] as player_2, [3] as player_3, [4] as player_4, [5] as player_5 
--- from (select team_id, game_id, player_id, lineup_num, ROW_NUMBER() OVER (PARTITION BY game_id, team_id, lineup_num ORDER BY player_id) AS rn from lac_fullstack_dev.dbo.lineup
--- -- where team_id = '1610612747' and game_id = '66' and lineup_num = 5
--- ) a
--- PIVOT(max(player_id) 
--- for rn in ([1], [2], [3], [4], [5])) as pt
-
--- b. The field lineup_num changes as a player on either team gets substituted. 
--- Write a SQL query with the resultant table that stores when a player is continuously on the court for a given period (call this a stint)
--- select team_id, game_id, player_id, [period], time_in, time_out, ROW_NUMBER() OVER(PARTITION by game_id, team_id, [period] ORDER BY game_id, team_id, [period]) as rn from lac_fullstack_dev.dbo.lineup
--- where team_id = '1610612747' and game_id = '66' and player_id = '203076' and [period] = 1
--- order by period, lineup_num
-
-with player_stint_ro as (select team_id, game_id, player_id, [period], lineup_num, time_in, time_out
--- , ROW_NUMBER() OVER(PARTITION by game_id, team_id, [period] ORDER BY game_id, team_id, [period], lineup_num) as rn
- from lac_fullstack_dev.dbo.lineup
-                    -- where team_id = '1610612747' and game_id = '66' and player_id = '203076' and [period] = 1
-                    ),
-    player_stints as ( --home games
-                    select a.game_id, b.game_date, c.teamName as team, d.teamName as opponent,
+    player_stints = """select a.game_id, b.game_date, c.teamName as team, d.teamName as opponent,
                     concat(e.first_name, ' ' , e.last_name) as player_name, 
-                    -- period, period as stint_number, cast(RIGHT(CONVERT(CHAR(8),DATEADD(second,time_in,0),108),5) as nvarchar) as time_in, cast(RIGHT(CONVERT(CHAR(8),DATEADD(second,time_out,0),108),5) as nvarchar) as time_out
-                    period, period as stint_number, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_in,0),108),5) as time_in, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_out,0),108),5) as time_out
+                    period, period as stint_number, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_in,0),108),5) as stint_start_time, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_out,0),108),5) as stint_end_time
 
                     from (select game_id, team_id, player_id, period,  max(time_in) as time_in, min(time_out) as time_out 
                         from (select a.* 
-                            from player_stint_ro a
-                            left join player_stint_ro b
+                            from (select team_id, game_id, player_id, [period], lineup_num, time_in, time_out
+                        from lac_fullstack_dev.dbo.lineup) a
+                            left join (select team_id, game_id, player_id, [period], lineup_num, time_in, time_out
+                        from lac_fullstack_dev.dbo.lineup) b
                             on a.game_id = b.game_id and a.team_id =  b.team_id and a.player_id = b.player_id and a.[period] = b.[period] and a.lineup_num = b.lineup_num - 1
                             and a.time_out = b.time_in) a
                         group by game_id, team_id, player_id, period) a
@@ -344,13 +304,14 @@ with player_stint_ro as (select team_id, game_id, player_id, [period], lineup_nu
                     --  away_games
                     select a.game_id, b.game_date, c.teamName as team, d.teamName as opponent,
                     concat(e.first_name, ' ' , e.last_name) as player_name, 
-                    -- period, period as stint_number, CAST(RIGHT(CONVERT(CHAR(8),DATEADD(second,time_in,0),108),5) as nvarchar) as time_in, CAST(RIGHT(CONVERT(CHAR(8),DATEADD(second,time_out,0),108),5) as nvarchar) as time_out
                     period, period as stint_number, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_in,0),108),5) as stint_start_time, RIGHT(CONVERT(CHAR(8),DATEADD(second,time_out,0),108),5) as stint_end_time
 
                     from (select game_id, team_id, player_id, period,  max(time_in) as time_in, min(time_out) as time_out 
                         from (select a.* 
-                            from player_stint_ro a
-                            left join player_stint_ro b
+                            from (select team_id, game_id, player_id, [period], lineup_num, time_in, time_out
+                        from lac_fullstack_dev.dbo.lineup) a
+                            left join (select team_id, game_id, player_id, [period], lineup_num, time_in, time_out
+                        from lac_fullstack_dev.dbo.lineup) b
                             on a.game_id = b.game_id and a.team_id =  b.team_id and a.player_id = b.player_id and a.[period] = b.[period] and a.lineup_num = b.lineup_num - 1
                             and a.time_out = b.time_in) a
                         group by game_id, team_id, player_id, period) a
@@ -363,39 +324,32 @@ with player_stint_ro as (select team_id, game_id, player_id, [period], lineup_nu
                     on b.away_id = d.teamId
                     left join lac_fullstack_dev.dbo.player e
                     on a.player_id = e.player_id
-                    where b.game_date is not null
-                    ),
-
--- -- i. Final table should be game date, team, opponent, player_name, period, stint_number, stint_start_time, stint_end_time
--- -- ii. Format the stint times in mm:ss so the start of the period is 12:00 and the end of the period is 00:00
-
--- select * from player_stints
--- where time_in = '12:00' and time_out = '00:00'
-
--- c. From you answer to 4.b, for each player, 
--- calculate the average number of stints a player has 
-
--- select b.game_date, b.team, a.player_name, a.avg_stints_per_game, b.avg_stint_length from (select avg(total_game_stints) as avg_stints_per_game, player_name from (select count(*) as total_game_stints , game_date, team, player_name  from player_stints
--- group by game_date, team, player_name) a
--- group by player_name) a
--- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_date, team, player_name  from player_stints
--- group by game_date, team, player_name) b
--- on a.player_name = b.player_name
--- where game_date = '2024-01-06 20:00:00' and team = 'Milwaukee Bucks'
+                    where b.game_date is not null"""
+    
+    player_stints = connection.execute_query_return_df(player_stints, 'lac_fullstack_dev')
+    connection.sql_query_bt(player_stints,'q4_b_player_stints', ['game_id', 'team', 'player_name', 'stint_number'], 0) 
 
 
 
--- and average stint length for a player for a given game.
+    question_04_b = """select * from q4_b_player_stints
+                    where stint_start_time = '12:00' and stint_end_time = '00:00'"""
+    question_04_b = connection.execute_query_return_df(question_04_b, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_b,'q4_b_final', ['game_id', 'team', 'player_name', 'stint_number'], 0) 
 
 
+    question_04_c = """select b.game_id, b.team, a.player_name, a.avg_stints_per_game, b.avg_stint_length from (select avg(total_game_stints) as avg_stints_per_game, player_name from (select count(*) as total_game_stints , game_id, team, player_name  from q4_b_player_stints
+                        group by game_id, team, player_name) a
+                        group by player_name) a
+                        left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,stint_end_time,stint_start_time)),0),108),5) as avg_stint_length, game_id, team, player_name  from q4_b_player_stints
+                        group by game_id, team, player_name) b
+                        on a.player_name = b.player_name
+                        -- where game_id = '102' and team = 'Milwaukee Bucks'
+                        
+                        """
+    question_04_c = connection.execute_query_return_df(question_04_c, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_c,'q4_c_final', ['game_id', 'team', 'player_name'], 0) 
 
--- d. Extend the query from 4.c to show columns for all games, in wins, in losses as well as a column that shows the difference in wins and losses
--- i.each set (all/wins/losses) should have # of games, average stint length, average number of stints
-
-
--- from sql query from #1
--- WITH 
-game_stats as (select game_id, home_id, home_score, away_id, away_score,
+    game_stats = """select game_id, home_id, home_score, away_id, away_score,
                                 case when home_score > away_score then 1
                                 else 0
                                 END 
@@ -406,74 +360,115 @@ game_stats as (select game_id, home_id, home_score, away_id, away_score,
                                 as AWAY_WIN        
 
 
-                                from lac_fullstack_dev.dbo.game_schedule a)
+                                from lac_fullstack_dev.dbo.game_schedule a"""
+    game_stats = connection.execute_query_return_df(game_stats, 'lac_fullstack_dev')
+    connection.sql_query_bt(game_stats,'q4_d_game_stats', ['game_id'], 0)
+
+    question_04_d_all = """select player_name, team, count(game_id) as total_games, avg(avg_stints_per_game) as avg_stints_per_game, RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(avg_stint_length),0),108),5)as avg_stint_length 
+                        from (select b.game_id, b.team, c.teamId, a.player_name, a.avg_stints_per_game, b.avg_stint_length,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 1 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 1 then 1
+                        else 0
+                        end 
+                        as win,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 0 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 0 then 1
+                        else 0
+                        end 
+                        as lose
+                        -- b.*,
+                        -- d.*  
+                        from (select avg(total_game_stints) as avg_stints_per_game, player_name 
+                            from (select count(*) as total_game_stints , game_id, team, player_name  
+                                from player_stints
+                                group by game_id, team, player_name) a
+                            group by player_name) a
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
+
+                        group by game_id, team, player_name) b
+                        on a.player_name = b.player_name
+                        left join lac_fullstack_dev.dbo.team c
+                        on b.team = c.teamName
+                        left join (select * from game_stats) d
+                        on b.game_id = d.game_id) a
+                        -- where win = 1
+                        group by player_name, team
+                        
+                        """
+    question_04_d_all = connection.execute_query_return_df(question_04_d_all, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_d_all,'q4_d_final_all', ['player_name', 'team'], 0) 
 
 
 
+    question_04_d_wins = """select player_name, team, count(game_id) as total_games, avg(avg_stints_per_game) as avg_stints_per_game, RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(avg_stint_length),0),108),5)as avg_stint_length 
+                        from (select b.game_id, b.team, c.teamId, a.player_name, a.avg_stints_per_game, b.avg_stint_length,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 1 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 1 then 1
+                        else 0
+                        end 
+                        as win,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 0 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 0 then 1
+                        else 0
+                        end 
+                        as lose
+                        -- b.*,
+                        -- d.*  
+                        from (select avg(total_game_stints) as avg_stints_per_game, player_name 
+                            from (select count(*) as total_game_stints , game_id, team, player_name  
+                                from player_stints
+                                group by game_id, team, player_name) a
+                            group by player_name) a
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
 
--- select b.game_id, b.team, c.teamId, a.player_name, a.avg_stints_per_game, b.avg_stint_length,
--- case when (c.teamid = d.home_id) and HOME_WIN = 1 then 1
--- when (c.teamid = d.away_id) and HOME_WIN = 1 then 1
--- else 0
--- end 
--- as win,
--- case when (c.teamid = d.home_id) and HOME_WIN = 0 then 1
--- when (c.teamid = d.away_id) and HOME_WIN = 0 then 1
--- else 0
--- end 
--- as lose
--- -- b.*,
--- -- d.*  
--- from (select avg(total_game_stints) as avg_stints_per_game, player_name 
---     from (select count(*) as total_game_stints , game_id, team, player_name  
---         from player_stints
---         group by game_id, team, player_name) a
---     group by player_name) a
--- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
--- group by game_id, team, player_name) b
--- on a.player_name = b.player_name
--- left join lac_fullstack_dev.dbo.team c
--- on b.team = c.teamName
--- left join (select * from game_stats) d
--- on b.game_id = d.game_id
-
-
-select player_name, team, count(game_id) as total_games, avg(avg_stints_per_game) as avg_stints_per_game, RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(avg_stint_length),0),108),5)as avg_stint_length 
-from (select b.game_id, b.team, c.teamId, a.player_name, a.avg_stints_per_game, b.avg_stint_length,
-case when (c.teamid = d.home_id) and HOME_WIN = 1 then 1
-when (c.teamid = d.away_id) and HOME_WIN = 1 then 1
-else 0
-end 
-as win,
-case when (c.teamid = d.home_id) and HOME_WIN = 0 then 1
-when (c.teamid = d.away_id) and HOME_WIN = 0 then 1
-else 0
-end 
-as lose
--- b.*,
--- d.*  
-from (select avg(total_game_stints) as avg_stints_per_game, player_name 
-    from (select count(*) as total_game_stints , game_id, team, player_name  
-        from player_stints
-        group by game_id, team, player_name) a
-    group by player_name) a
--- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
-left join (select avg(datediff(minute,time_out,time_in)) as avg_stint_length, game_id, team, player_name  from player_stints
-
-group by game_id, team, player_name) b
-on a.player_name = b.player_name
-left join lac_fullstack_dev.dbo.team c
-on b.team = c.teamName
-left join (select * from game_stats) d
-on b.game_id = d.game_id) a
-where win = 1
-group by player_name, team
+                        group by game_id, team, player_name) b
+                        on a.player_name = b.player_name
+                        left join lac_fullstack_dev.dbo.team c
+                        on b.team = c.teamName
+                        left join (select * from game_stats) d
+                        on b.game_id = d.game_id) a
+                        where win = 1
+                        group by player_name, team
+                        
+                        """
+    question_04_d_wins = connection.execute_query_return_df(question_04_d_wins, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_d_wins,'question_04_d_wins', ['player_name', 'team'], 0) 
 
 
 
-"""
-    try:
-        connection.exceute_query(query_string_q4)
-    except:
-        error_value = str(sys.exc_info()[1])
-        print(error_value)
+    question_04_d_losses = """select player_name, team, count(game_id) as total_games, avg(avg_stints_per_game) as avg_stints_per_game, RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(avg_stint_length),0),108),5)as avg_stint_length 
+                        from (select b.game_id, b.team, c.teamId, a.player_name, a.avg_stints_per_game, b.avg_stint_length,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 1 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 1 then 1
+                        else 0
+                        end 
+                        as win,
+                        case when (c.teamid = d.home_id) and HOME_WIN = 0 then 1
+                        when (c.teamid = d.away_id) and HOME_WIN = 0 then 1
+                        else 0
+                        end 
+                        as lose
+                        -- b.*,
+                        -- d.*  
+                        from (select avg(total_game_stints) as avg_stints_per_game, player_name 
+                            from (select count(*) as total_game_stints , game_id, team, player_name  
+                                from player_stints
+                                group by game_id, team, player_name) a
+                            group by player_name) a
+                        -- left join (select RIGHT(CONVERT(CHAR(8),DATEADD(second,avg(datediff(minute,time_out,time_in)),0),108),5) as avg_stint_length, game_id, team, player_name  from player_stints
+                        left join (select avg(datediff(minute,stint_end_time,stint_start_time)) as avg_stint_length, game_id, team, player_name  from player_stints
+
+                        group by game_id, team, player_name) b
+                        on a.player_name = b.player_name
+                        left join lac_fullstack_dev.dbo.team c
+                        on b.team = c.teamName
+                        left join (select * from game_stats) d
+                        on b.game_id = d.game_id) a
+                        where win = 0
+                        group by player_name, team
+                        
+                        """
+    question_04_d_losses = connection.execute_query_return_df(question_04_d_losses, 'lac_fullstack_dev')
+    connection.sql_query_bt(question_04_d_losses,'question_04_d_losses', ['player_name', 'team'], 0) 
